@@ -5,6 +5,8 @@ import com.gameexpert.chat.event.ChatSavedEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import com.gameexpert.chat.repository.ChatMessageRepository;
 
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import org.springframework.data.domain.PageRequest;
@@ -31,7 +33,13 @@ public class ChatService {
     @Transactional
     public ChatMessageResponse saveMessage(Long worldId, String sender, String content) {
         // TODO Lv 5: 채팅을 저장하고 savedResponse(worldId, saved)의 결과를 반환합니다.
-        throw new UnsupportedOperationException("Lv 5: 채팅 저장을 구현하세요.");
+        World world = worldRepository.findById(worldId).orElseThrow(
+                () -> new NotFoundException("WORLD_NOT_FOUND")
+        );
+
+        ChatMessage saved = chatMessageRepository.save(new ChatMessage(world, sender, content));
+
+        return savedResponse(worldId, saved);
     }
 
     @Transactional(readOnly = true)
@@ -46,7 +54,25 @@ public class ChatService {
                 .findByWorldIdOrderByCreatedAtDescIdDesc(worldId, PageRequest.of(0, capped));
 
         // TODO Lv 5: recent를 오래된 순서로 바꾸고 응답 DTO 목록으로 반환합니다.
-        return List.of();
+        Collections.reverse(recent);
+
+        List<ChatMessageResponse> result = recent.stream()
+                .map(message -> new ChatMessageResponse(
+                        message.getSenderNickname(),
+                        message.getContent(),
+                        message.getCreatedAt()
+                ))
+                .toList();
+
+        System.out.println("total: " + result.size());
+
+        for (ChatMessageResponse element : result) {
+            System.out.println("createdAt: " + element.getCreatedAt()
+                    + ", nickname: " + element.getSender()
+                    + ", content: " + element.getContent());
+        }
+
+        return result;
     }
 
     private ChatMessageResponse savedResponse(Long worldId, ChatMessage saved) {
