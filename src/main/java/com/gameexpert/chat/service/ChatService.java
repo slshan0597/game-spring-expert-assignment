@@ -64,13 +64,13 @@ public class ChatService {
                 ))
                 .toList();
 
-        System.out.println("total: " + result.size());
-
-        for (ChatMessageResponse element : result) {
-            System.out.println("createdAt: " + element.getCreatedAt()
-                    + ", nickname: " + element.getSender()
-                    + ", content: " + element.getContent());
-        }
+//        System.out.println("total: " + result.size());
+//
+//        for (ChatMessageResponse element : result) {
+//            System.out.println("createdAt: " + element.getCreatedAt()
+//                    + ", nickname: " + element.getSender()
+//                    + ", content: " + element.getContent());
+//        }
 
         return result;
     }
