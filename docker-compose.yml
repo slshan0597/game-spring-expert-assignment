@@ -1,0 +1,59 @@
+services:
+  # 1. MySQL 데이터베이스 설정
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-composed
+    environment:
+      MYSQL_ROOT_PASSWORD: 12345678
+      MYSQL_DATABASE: webcraft
+    ports:
+      - "3306:3306"
+    # 헬스체크: MySQL이 완전히 켜져서 로그인할 준비가 됐는지 검사
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p12345678"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 2. Redis 설정
+  redis:
+    image: redis:alpine
+    container_name: redis-composed
+    ports:
+      - "6379:6379"
+    # 헬스체크: Redis가 명령을 받을 준비가 됐는지 검사
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 3. 첫 번째 앱 서버 (외부 포트 8081)
+  app1:
+    build: . # 현재 폴더에 있는 Dockerfile로 빌드
+    container_name: app1-composed
+    ports:
+      - "8081:8080" # 외부에서 8081로 접속하면 내부 8080으로 연결
+    environment:
+      - DB_HOST=mysql # localhost 대신 도커 서비스 이름인 'mysql' 입력
+      - REDIS_HOST=redis # localhost 대신 도커 서비스 이름인 'redis' 입력
+    depends_on:
+      mysql:
+        condition: service_healthy # mysql이 완전히 준비(healthy)되면 실행
+      redis:
+        condition: service_healthy
+
+  # 4. 두 번째 앱 서버 (외부 포트 8082)
+  app2:
+    build: .
+    container_name: app2-composed
+    ports:
+      - "8082:8080" # 외부에서 8082로 접속하면 내부 8080으로 연결
+    environment:
+      - DB_HOST=mysql
+      - REDIS_HOST=redis
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
