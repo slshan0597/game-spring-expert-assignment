@@ -13,6 +13,7 @@
 ## 구현
 ### 1. 플레이어 등록 (Lv 3.)
 #### 🗺️ ERD (데이터베이스 구조)
+
 ```mermaid
 erDiagram
     PLAYERS {
@@ -50,8 +51,7 @@ erDiagram
 
 ---
 
-### 2. 월드 생성 (Lv 4.)
-
+### 2. 월드 조회 및 생성 (Lv 4.)
 게임에 입장하기 위한 월드의 목록을 조회하고, 최대 개수 제한 내에서 새로운 월드를 생성하는 API
 
 #### 🗺️ ERD (데이터베이스 구조)
@@ -74,7 +74,6 @@ erDiagram
 ```
 
 #### 📑 API 명세서
-
 ##### [1] 월드 목록 조회
 - **HTTP 메서드 / 경로:** `GET` `/worlds`
 - **응답 코드 목록 (Responses)**
@@ -113,7 +112,60 @@ erDiagram
 | **409 Conflict** | 전체 생성된 월드가 이미 최대 상한선(3개)에 도달함 | `{"error": "WORLD_LIMIT_REACHED"}` |
 | **503 Service** | 서버 기동 직후 월드 준비 완료 전 상태 | `{"error": "WORLD_BASELINE_INITIALIZING"}` |
 
-#### 🛠️ 주요 구현 특징 (Technical Points)
-- **서버 기동 안전장치:** `baselineReadiness.isReady()` 검증을 통해 서버 초기화가 완료되기 전 들어오는 요청을 `503 Service Unavailable`로 안전하게 차단합니다.
-- **트랜잭션 기반 동시성 원자성 보장:** `worldOperations.duringCreation()` 람다 스코프 내부에서 실행을 격리하여, 분산 서버 환경에서 여러 건의 생성 요청이 동시에 인입되더라도 `worldRepository.countRootWorlds()` 검사가 정확히 카운팅되어 `MAX_WORLDS(3개)` 상한선을 절대로 넘지 않도록 트랜잭션 동시성을 제어합니다.
-- **방어적 데이터 검증:** 월드 소유자가 지정된 경우 `playerRepository.findByNickname()` 검증을 거쳐 가입되지 않은 도용 닉네임일 시 `404 PLAYER_NOT_FOUND` 예외를 즉각 발생시킵니다.
+#### 🛠️ 주요 구현 특징
+- **원자성 보장:** 월드 생성 제한을 카운트하는 과정을 `worldOperations.duringCreation()` 람다 스코프 내부에 격리하여 트랜잭션 환경에서 실행
+- **동시성 보장:** 트랜잭션 내에서의 환경에 `worldCreationGuard.lock()` 락을 걸어 동시성을 보장
+
+---
+
+### 3. 최근 채팅 조회 (Lv 5. ~ Lv 6.)
+월드에 처음 들어갈 때 해당 월드의 최근 대화를 불러오는 API
+
+#### 🗺️ ERD (데이터베이스 구조)
+
+```mermaid
+erDiagram
+    WORLDS ||--o{ CHATS : "contains"
+    WORLDS {
+        Long id PK "월드 고유 식별자"
+        String name "월드 이름"
+    }
+    CHATS {
+        Long id PK "채팅 고유 식별자"
+        Long world_id FK "소속 월드 ID"
+        String sender_nickname "보낸 플레이어 닉네임"
+        String content "채팅 내용"
+        LocalDateTime created_at "저장 시각"
+    }
+```
+
+#### 📑 API 명세서
+- **HTTP 메서드 / 경로:** `GET` `/worlds/{worldId}/chats`
+
+| 파라미터 종류 | 필드명 | 타입 | 제약 조건 | 설명 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Path** | `worldId` | `integer <int64>` | 필수 입력 | 월드의 고유 식별자<br>숫자가 아니면 400 VALIDATION_FAILED |
+| **Query** | `limit` | `integer` | 기본값: `50`<br>선택 입력 | 가져올 최대 건수<br>1 미만이나 100 초과는 1~100으로 보정, 숫자가 아니면 400 |
+
+- **응답 데이터 예시 (200 OK)**
+```json
+[
+  {
+    "sender": "steve",
+    "content": "안녕하세요!",
+    "createdAt": "2026-09-22T09:41:00"
+  }
+]
+```
+
+- **응답 코드 목록 (Responses)**
+
+| 상태 코드 (HTTP Status) | 설명 | 응답 본문 (Response Body) |
+| :--- | :--- | :--- |
+| **200 OK** | 오래된 순서의 채팅 목록 반환 | `[{"sender": "string", "content": "string", "createdAt": "string"}]` |
+| **400 Bad Request** | `worldId` 또는 `limit`이 숫자가 아님 | `{"error": "VALIDATION_FAILED"}` |
+| **404 Not Found** | 요청에 포함된 `worldId`가 존재하지 않는 월드임 | `{"error": "WORLD_NOT_FOUND"}` |
+
+#### 🛠️ 주요 구현 특징
+- **최신순 정렬:** DB에서 최신 대화가 먼저 추출되도록 페이징(`PageRequest`) 조회를 수행, 반환 시 역정렬
+- **성능 최적화:** 읽기 전용 트랜잭션(`@Transactional(readOnly = true)`)을 통해 조회 성능을 최적화하고 엔티티 변경 감지
